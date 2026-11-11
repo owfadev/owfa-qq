@@ -7,6 +7,7 @@ The only outbound frames are protocol frames (identify/resume/heartbeat).
 """
 import asyncio
 import contextlib
+import datetime as _dt
 import json
 import random
 import signal
@@ -26,6 +27,23 @@ class GatewayUnavailable(RuntimeError):
 
 class _Stopped(Exception):
     """The listener was asked to stop while waiting for a frame."""
+
+
+def _note(message: str) -> None:
+    """Append one timestamped line to listen.log.
+
+    A detached listener used to swallow every session-level error, so a
+    spinning listener was indistinguishable from a dead one (empty log while
+    ``status`` kept reporting running). The reconnect backoff bounds volume.
+    """
+    try:
+        path = config.log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"[gateway] {stamp} {message}\n")
+    except OSError:
+        pass
 
 
 async def _heartbeat(ws, interval: float, last_seq):
@@ -172,6 +190,7 @@ async def run(cfg, *, once=False, timeout=None, max_events=None) -> dict:
     total = 0
     backoff = 1.0
     stop = asyncio.Event()
+    _note(f"listen start once={once} timeout={timeout or 0}s max_events={max_events or 0}")
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -198,11 +217,12 @@ async def run(cfg, *, once=False, timeout=None, max_events=None) -> dict:
         except asyncio.TimeoutError:
             break
         except api.TokenExpired:
+            _note("token expired — forced refresh")
             auth.get_token(cfg, force=True)
-        except (api.ApiError, OSError, asyncio.IncompleteReadError):
-            pass
-        except Exception:
-            pass
+        except (api.ApiError, OSError, asyncio.IncompleteReadError) as exc:
+            _note(f"session error: {exc.__class__.__name__}: {str(exc)[:160]}")
+        except Exception as exc:
+            _note(f"unexpected error: {exc.__class__.__name__}: {str(exc)[:160]}")
         if stop.is_set():
             break
         wait = min(60.0, backoff) * (0.7 + random.random() * 0.6)
@@ -211,6 +231,7 @@ async def run(cfg, *, once=False, timeout=None, max_events=None) -> dict:
         except asyncio.TimeoutError:
             pass
         backoff = min(60.0, backoff * 2)
+    _note(f"listen stopped received={total}")
     return {"received": total, "stopped": stop.is_set()}
 
 

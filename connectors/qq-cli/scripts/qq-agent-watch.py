@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve()
@@ -35,6 +36,7 @@ WRAP_SUFFIX = ".py" if IS_WINDOWS else ".sh"
 INBOX_WRAP = ROOT / "connectors" / "qq-cli" / "scripts" / f"qq-agent-inbox{WRAP_SUFFIX}"
 SEND_WRAP = ROOT / "connectors" / "qq-cli" / "scripts" / f"qq-agent-send{WRAP_SUFFIX}"
 PIPELINE = ROOT / ".meta" / "scripts" / "pipeline.py"
+WATCHER_STATE = HOME_DIR / "watcher.json"
 
 AGENT_TIMEOUT = 240
 EXCLUDED_NAMES = {"index.md", "hot.md", "tags.md", "log.md"}
@@ -59,7 +61,9 @@ def cron_status() -> str:
         text = CRON.read_text(encoding="utf-8")
     except OSError:
         return ""
-    m = re.search(r"(?m)^\s+status:\s*(\S+)", text)
+    # Exactly two-space indent: the cron block mapping level. A looser
+    # \s+ pattern would match any indented status elsewhere in the page.
+    m = re.search(r"(?m)^  status:\s*(\S+)", text)
     return m.group(1) if m else ""
 
 
@@ -224,6 +228,46 @@ def log_failure(rc: int, kind: str) -> None:
         pass
 
 
+def load_watcher_state() -> dict:
+    try:
+        with open(WATCHER_STATE, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    return {
+        "consecutive_failures": int(data.get("consecutive_failures") or 0),
+        "last_failure_epoch": int(data.get("last_failure_epoch") or 0),
+    }
+
+
+def save_watcher_state(state: dict) -> None:
+    try:
+        HOME_DIR.mkdir(parents=True, exist_ok=True)
+        with open(WATCHER_STATE, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+            f.write("\n")
+    except OSError:
+        note("could not save watcher state")
+
+
+def backoff_seconds(failures: int) -> int:
+    """Circuit breaker gap after n consecutive failed turns (cap 30 min)."""
+    if failures <= 0:
+        return 0
+    return min(1800, 60 * 2 ** (failures - 1))
+
+
+def log_recovery(recovered: int) -> None:
+    try:
+        subprocess.run(
+            [sys.executable, str(PIPELINE), "log", "other",
+             f"QQ watcher recovered after {recovered} failed turn(s)", "--domain", "qq"],
+            cwd=str(ROOT), timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="one unattended QQ agent turn")
     parser.add_argument("--dry-run", action="store_true",
@@ -237,6 +281,17 @@ def main(argv=None) -> int:
         if args.dry_run:
             print(json.dumps({"status": status or "(absent)", "run": False}))
         return 0
+
+    # Circuit breaker: back off after consecutive failed turns so a broken
+    # agent runtime neither spins every minute nor floods the wiki log.
+    wstate = load_watcher_state()
+    if not args.dry_run and wstate["consecutive_failures"] > 0:
+        gap = backoff_seconds(wstate["consecutive_failures"])
+        elapsed = time.time() - wstate["last_failure_epoch"]
+        if elapsed < gap:
+            note(f"circuit breaker: {wstate['consecutive_failures']} consecutive failure(s); "
+                 f"backing off {int(gap - elapsed)}s")
+            return 0
 
     gcount = count("group")
     ccount = count("c2c")
@@ -267,8 +322,21 @@ def main(argv=None) -> int:
         if args.dry_run:
             return rc
         if rc != 0:
-            log_failure(rc, kind)
+            wstate = load_watcher_state()
+            wstate["consecutive_failures"] += 1
+            wstate["last_failure_epoch"] = int(time.time())
+            save_watcher_state(wstate)
+            if wstate["consecutive_failures"] == 1:
+                log_failure(rc, kind)  # wiki log: first failure only
+            else:
+                note(f"turn failed rc={rc} (consecutive {wstate['consecutive_failures']}); "
+                     f"wiki log resumes on recovery")
         else:
+            wstate = load_watcher_state()
+            recovered = wstate["consecutive_failures"]
+            if recovered > 0:
+                save_watcher_state({"consecutive_failures": 0, "last_failure_epoch": 0})
+                log_recovery(recovered)
             update_last_run()
         return rc
     finally:

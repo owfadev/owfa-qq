@@ -237,7 +237,8 @@ qq-cli reply EVENT_C2C_1 --text-file - --dry-run
 
 ## Version
 
-`0.2.0` — platform-neutral process layer (`qqcli/platforms`), cross-platform
+`0.3.0` — listener logging, sent-ledger retention, watcher breaker, inject-pointer diet;
+  0.2.0 was the platform-neutral process layer (`qqcli/platforms`), cross-platform
 watcher, systemd/launchd/Task Scheduler recipes, `executor.json` marker, bootstrap;
 0.1.0 was the first transport implementation (auth, WebSocket receive, allowlist,
 normalized spool, passive replies, offline self-test).

@@ -343,6 +343,50 @@ def counts() -> dict:
     return {"total": total, "unread": unread, "expired": expired, "blocked": blocked}
 
 
+def _purge_sent(days: int) -> dict:
+    """Roll sent.jsonl down to the retention window.
+
+    purge() used to touch only inbox files and state keys, so the sent-reply
+    ledger grew without bound. Records carry an ``at`` ISO stamp; malformed
+    lines count as removed.
+    """
+    path = config.sent_path()
+    if not path.exists():
+        return {"sent_kept": 0, "sent_removed": 0}
+    cutoff = _now() - max(0, int(days)) * 86400
+    kept = []
+    removed = 0
+    with _lock("sent"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        removed += 1
+                        continue
+                    stamp = _epoch(rec.get("at"))
+                    if stamp is None or stamp >= cutoff:
+                        kept.append(line)
+                    else:
+                        removed += 1
+        except OSError:
+            return {"sent_kept": 0, "sent_removed": 0}
+        if removed:
+            tmp = str(path) + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                for line in kept:
+                    f.write(line + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            config.chmod_600(tmp)
+            os.replace(tmp, path)
+    return {"sent_kept": len(kept), "sent_removed": removed}
+
+
 def purge(days: int) -> dict:
     cutoff = _dt.date.today() - _dt.timedelta(days=max(0, int(days)))
     removed = 0
@@ -363,7 +407,9 @@ def purge(days: int) -> dict:
         state = load_state()
         _prune(state, max(0, int(days)))
         save_state(state)
-    return {"removed_files": removed, "kept_days": max(0, int(days))}
+    result = {"removed_files": removed, "kept_days": max(0, int(days))}
+    result.update(_purge_sent(days))
+    return result
 
 
 def load_cursor() -> dict:

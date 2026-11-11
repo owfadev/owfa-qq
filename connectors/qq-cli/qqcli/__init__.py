@@ -11,4 +11,4 @@ Credentials and raw message state live under ~/.qq-cli/ (0600) and never enter
 the repository.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
