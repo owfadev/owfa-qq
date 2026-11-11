@@ -513,7 +513,8 @@ def cmd_purge(args, cfg):
     if args.format == "json":
         _print_json(result)
     else:
-        print(f"[purge] removed {result['removed_files']} inbox file(s), kept {result['kept_days']} day(s)")
+        print(f"[purge] removed {result['removed_files']} inbox file(s), "
+              f"pruned {result.get('sent_removed', 0)} sent record(s), kept {result['kept_days']} day(s)")
     return 0
 
 

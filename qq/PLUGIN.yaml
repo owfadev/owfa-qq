@@ -1,19 +1,19 @@
 id: qq
 schema_version: 1
-version: 0.2
+version: 0.3
 depends:
   - domain
   - wiki
   - trust
   - log
   - cron
-updated: 2026-10-28
+updated: 2026-11-11
 attachment:
   - "wiki/qq/ — QQ domain territory: policy.md (declaration page, type: qq; whitelist semantics, group public-audience convention, bot identity); no transcript, openid or credential content lands here"
 fields:
   qq: "block mapping (policy page policy.md) — bot_appid (non-secret official bot AppID) / public_field (frontmatter field, default audience) / public_value (public) / group_passive_window (5m) / c2c_passive_window (60m) / max_reply_chars (1800)"
   audience: "scalar (optional on any wiki page) — public|private; absence = private; only audience: public pages may be read into group replies"
-inject: "QQ chat domain wiki/qq/ (external: official QQ Bot platform api.bot.qq.com, connector qq-cli transport-only read/reply): policy page wiki/qq/policy.md (type: qq + qq block mapping, created when absent); qq-cli runs a local WebSocket listener writing a deduplicated inbox under ~/.qq-cli (never in the repo) — the agent session drains it and composes every reply strictly from wiki/ and vault/ with source citations, no general knowledge and no external content; whitelist enforced connector-side (allowed user_openid / group_openid in ~/.qq-cli/allowlist.json; AppID/ClientSecret in ~/.qq-cli/credentials.json, 0600), unlisted senders never reach the agent; group replies may read only pages carrying audience: public (absence = private), private chats may read all pages; passive windows are 5 minutes (group) / 60 minutes (c2c) and active messages are unavailable, so processing must happen inside the window or the message lapses; credentials and raw message content never enter the repository"
+inject: "QQ chat domain wiki/qq/ (official QQ Bot via qq-cli; disclosure-only): policy wiki/qq/policy.md (type: qq + qq block); red lines: whitelist human-only, group reads only audience: public, secrets/message text never in-repo; before acting read qq/PLUGIN.md"
 inject_tier: full
 commands:
   - qq

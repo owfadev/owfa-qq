@@ -133,6 +133,14 @@ explicitly runs `save`.
 
 ## Changelog
 
+- 0.3 (2026-11-11): listener observability and ledger hygiene — the detached
+  gateway logs one line per session-level error to `~/.qq-cli/listen.log`,
+  `purge` rolls `sent.jsonl` into the retention window (it previously grew
+  unbounded), the unattended watcher backs off exponentially after consecutive
+  failed turns and writes the wiki log only on the first failure and on
+  recovery, and the cron-page `status` regex is unified with the init verify.
+  The inject line became a ≤256 B routing pointer (kernel #49 guideline); the
+  full contract stays in this file and the command skill.
 - 0.2 (2026-10-28): process and executor layers made platform-neutral — `qqcli/platforms/`
   adapter (POSIX/Windows), cross-platform Python watcher, launchd and Task Scheduler
   recipes, `~/.qq-cli/executor.json` marker; the connector core no longer imports

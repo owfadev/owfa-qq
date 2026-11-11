@@ -1,6 +1,6 @@
 schema_version: 1
 id: qq
-version: 0.2
+version: 0.3
 compat: ">= 0.3"
 members: [qq]
 connectors:
